@@ -1,0 +1,67 @@
+#!/bin/bash
+
+prog=${0##*/}
+shopt -s extglob
+
+usage () {
+	_usage="Usage: $prog <topology> [namespace] <command> [args...]"
+	if [ $# -ne 0 ] ; then
+		exec >/dev/stderr
+		echo Error: $@!
+		echo $_usage
+		exit 1
+	else
+		echo $_usage
+		exit 0
+	fi
+}
+
+test $# -eq 0 &&
+	usage
+_help=false
+if [[ "$1" == +(--help|help) ]] ; then
+	_help=true; shift
+fi
+test $# -eq 0 &&
+	usage
+# catch recursion
+test $1 = $prog &&
+	usage \"$1\" isn\'t a topology
+_topology=${1%%-*}
+eval T="$_topology\*"
+test -r $T || usage no such topology, \"$1\"
+eval source $T
+shift
+if eval $_help || test $# -eq 0 ; then
+	eval "$_topology-help" $@
+	exit $?
+fi
+if [ -a /run/netns/$_topology-$1 ] ; then
+	_namespace=$_topology-$1; shift
+	if [ $# -gt 1 ] ; then
+		sudo ip netns exec $_namespace $@
+	else
+		sudo -s ip netns exec $_namespace \
+			env PS1="$_namespace\\$ " bash --norc -i
+	fi
+	exit $?
+fi
+_command=$1; shift
+type -p "$_topology-$_command" ||
+	usage \"$_command\" unknown
+if [ $_command = "set-up" ] ; then
+	ip_forward=/proc/sys/net/ipv4/ip_forward
+	test `cat $ip_forward` -eq 0 &&
+		echo 1 | sudo tee $ip_forward >/dev/null
+	test -d /etc/netns ||
+		sudo mkdir -p /etc/netns
+	grep -q netns /proc/mounts ||
+		sudo mount -t tmpfs none /etc/netns
+fi
+eval "$_topology-$_command" $@
+ret=$?
+if [ $_command = "tear-down" ] ; then
+	test `ls /etc/netns | wc -l` -eq 0 &&
+		sudo umount /etc/netns
+fi
+exit $ret
