@@ -15,21 +15,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see http://www.gnu.org/licenses/ .
 
-# The default topology prefix is the first word of the script name
-# (i.e. "t0001" of "t0001-2-hosts".  To override, set topology prior
-# to including the library; for example:
-# topology=test
-
-# Use this to source the library relative to the path used to execute
-# this script (i.e. ./t0001-2-hosts, ns/t0001-2-hosts, etc.)
 . ${0%/*}/netns-lib
 
-t0001_description="A single network of two hosts with static routes."
-read -d '' t0001_diagram <<-EOF
+t0002_description="A single network of two hosts with ripd."
+read -d '' t0002_diagram <<-"EOF"
 	\\th1 [10.100.0.1]     [10.100.0.2] h2
 	\\t   [10.100.1.1] --- [10.100.1.2]
 EOF
-read -d '' t0001_hostnames <<-EOF
+read -d '' t0002_hostnames <<-EOF
 	127.0.0.1	localhost
 	::1		ip6-localhost	ip6-loopback
 	fe00::0		ip6-localnet
@@ -40,54 +33,72 @@ read -d '' t0001_hostnames <<-EOF
 	10.100.0.1	h1
 	10.100.0.2	h2
 EOF
+t0002_hosts="h1 h2"
+t0002_nets="n1"
+t0002_n1_hosts="h1 h2"
 
-# This topology has just two hosts on a single network.
-t0001_hosts="h1 h2"
-t0001_nets="n1"
-t0001_n1_hosts="h1 h2"
-
-# Here are each host's addresses for both loopback and network interfaces.
-read -d '' t0001_h1_lo <<-EOF
+read -d '' t0002_h1_lo <<-EOF
 	127.0.0.1/8
 	::1/128
 	10.100.0.1/32
 EOF
-read -d '' t0001_h2_lo <<-EOF
+read -d '' t0002_h2_lo <<-EOF
 	127.0.0.1/8
 	::1/128
 	10.100.0.2/32
 EOF
-read -d '' t0001_h1_n1 <<-EOF
+read -d '' t0002_h1_n1 <<-EOF
 	10.100.1.1/30 broadcast 10.100.0.3
 EOF
-read -d '' t0001_h2_n1 <<-EOF
+read -d '' t0002_h2_n1 <<-EOF
 	10.100.1.2/30 broadcast 10.100.0.3
 EOF
 
-# These are the routes to each others loopback host address.
-read -d '' t0001_h1_routes <<-EOF
-	10.100.0.2/32 via 10.100.1.2
-EOF
-read -d '' t0001_h2_routes <<-EOF
-	10.100.0.1/32 via 10.100.1.1
+read -d '' t0002_h1_Quagga <<-EOF 
+	interface lo
+	 description host h1
+	 link-detect
+	interface n1
+	 description connected to n1
+	 link-detect
+	!
+	!debug rip events
+	!debug rip packet
+	!
+	router rip
+	 network 10.100.1.0/30
+	 network eth0
+	 route 10.100.0.1/32
+	! distribute-list private-only in n1
+	!
+	!access-list private-only permit 10.0.0.0/8
+	!access-list private-only deny any
 EOF
 
-# Start kernel IP forwarding if needed
+read -d '' t0002_h2_Quagga <<-EOF
+	interface lo
+	 description host h2
+	 link-detect
+	interface n1
+	 description connected to n1
+	 link-detect
+	!
+	!debug rip events
+	!debug rip packet
+	!
+	router rip
+	 network 10.100.1.0/30
+	 network eth0
+	 route 10.100.0.2/32
+	! distribute-list private-only in n1
+	!
+	!access-list private-only permit 10.0.0.0/8
+	!access-list private-only deny any
+EOF
+
 netns '' enable-ip-forward
-
-# Start the topology
 netns '' start
-
-# ping each other
+netns '' wait-for-route h1 10.100.0.2/32
 netns 'h1 ping h2' nullout exec h1 ping -A -q -c 5 -w 2 h2
 netns 'h2 ping h1' nullout exec h2 ping -A -q -c 5 -w 2 h1
-
-# finish
 netns '' stop
-
-# ./t0001-2-hosts --no-color
-# ok 1 - h1 ping h2
-# ok 2 - h2 ping h1
-# Successes          2
-# Failures           0
-# Total              2

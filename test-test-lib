@@ -1,0 +1,40 @@
+#!/bin/bash
+#
+# Copyright (c) 2012 Tom Grennan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
+
+. ${0%/*}/netns-lib
+
+test_description="No name spaces at all, just testing the harness."
+
+example-message () {		# STYLE ....
+	c=$1; shift
+	color $c This is the first \"double-quoted\" line of an $1 message.
+	color $c <<-EOF
+		This is the second line...
+		and third lines.
+	EOF
+	color $c This is the fourth and final \'single-quoted\' line.
+}
+
+netns '' example-message error
+netns '' example-message skip
+netns '' example-message pass
+netns '' example-message info
+netns '' nullout echo You will not see this unless --dry-run.
+netns '' as-root-here-tee /tmp/$prog-here-example <<-EOF
+	This is a here document example.
+EOF
+netns '' as-root rm -f /tmp/$prog-here-example
