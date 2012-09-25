@@ -1,0 +1,54 @@
+#!/bin/bash
+#
+# Copyright (c) 2012 Tom Grennan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
+
+t1201_description="A single network of two ipv6 hosts with ospf"
+read -d '' t1201_diagram <<-"EOF"
+	\\th1 [fd4d:ead4:3895:c141::1]           [fd4d:ead4:3895:c141::2] h2
+	\\t   [fe80::####:####:####:####] --- [fe80::####:####:####:####]
+EOF
+
+t1201_hosts="h1 h2"
+t1201_h1="fd4d:ead4:3895:c141::1"
+t1201_h2="fd4d:ead4:3895:c141::2"
+t1201_h1_lo="$t1201_h1/128"
+t1201_h2_lo="$t1201_h2/128"
+t1201_nets="n1"
+t1201_n1_hosts="h1 h2"
+
+read -d '' t1201_Quagga <<-"EOF"
+	router ospf6
+	 router-id $router_id
+	 interface n1 area 0.0.0.0
+	 area 0.0.0.0 range $network_lo
+	 redistribute connected
+EOF
+
+for host in $t1201_hosts ; do
+	eval host_addr=\$t1201_$host
+	eval router_id=10.0.0.${host_addr##*:}
+	eval network_lo=\$t1201_${host}_lo
+	eval t1201_${host}_Quagga=\""$t1201_Quagga"\"
+done
+
+source ${0%/*}/netns
+
+export TIMEFORMAT="%R seconds"
+may say info OSPF may take up to 60 seconds to converge.
+caption convergence retry 60 expect output="\'$t1201_h2 via*\'" \
+	on h1 ip -6 route list $t1201_h2
+caption 'ping h2' expect ok on h1 ping6 -A -q -c5 h2 >/dev/null
+caption 'ping h1' expect ok on h1 ping6 -A -q -c5 h1 >/dev/null

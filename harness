@@ -1,0 +1,116 @@
+#!/bin/bash
+#
+# Copyright (c) 2012 Tom Grennan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
+#
+# This is a generic test harness library sourced by regression scripts.
+
+readonly full_prog=$0
+readonly prog=${0##*/}
+: ${topology:=${prog%%-*}}
+shopt -s expand_aliases extglob
+declare -i Successes=0 Failures=0 Total=0
+readonly pager="less -LFrSXE"
+alias accessible='test -a'
+alias expect=expect_actual
+alias may=eval
+alias may_begin_html=:
+alias may_end_html=:
+alias may_show_failure=show_failure
+alias may_show_success=show_success
+alias may_show_summary=show_summary
+alias no_pager='test ! -t 1'
+alias keep_logs=false
+alias quiet=false
+alias say=say_tty
+
+if test -t 1 ; then
+	declare -r tty_error=$(tput bold; tput setaf 1)	# bold red
+	declare -r tty_skip=$(tput bold; tput setaf 2)	# bold green
+	declare -r tty_pass=$(tput setaf 2)		# green
+	declare -r tty_info=$(tput setaf 3)		# brown/yellow
+	declare -r tty_reset=$(tput sgr0)
+fi
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-h | -help | --help | --usage )
+		set usage ;;
+	-n | --dry-run )
+		alias accessible=true
+		alias expect=expect_dry_run
+		alias may=dry_run
+		alias may_show_failure=show_dry_run_caption
+		alias may_show_success=show_dry_run_caption
+		alias may_show_summary=:
+		shift ;;
+	-o )	shift
+		outfile=$1
+		shift ;;
+	-o* )	outfile=${1/-o}
+		shift ;;
+	--outfile )
+		shift
+		outfile=$1
+		shift ;;
+	--outfile=* )
+		outfile=${1/--outfile=}
+		shift ;;
+	--no-color | --no-colour )
+		alias say=say_ascii
+		shift ;;
+	--no-pager )
+		alias no_pager=true
+		shift ;;
+	--keep-logs )
+		alias keep_logs=true
+		shift ;;
+	-q | --quiet )
+		alias quiet=true
+		shift ;;
+	-v | --verbose )
+		alias may=verbose
+		shift ;;
+	-* )	set usage Unknown option, \'$1\'. ;;
+	* )	alias may_show_summary=:
+		break ;;
+	esac
+done
+
+if [ -n "$outfile" ] ; then
+	exec >$outfile
+	alias no_pager=true
+	if [[ "$outfile" == @(*.html) ]] ; then
+		alias may_begin_html=begin_html
+		alias may_end_html=end_html
+		alias may_show_summary=show_summary_html
+		alias say=say_html
+	else
+		alias say=say_ascii
+	fi
+fi
+
+source ${0%/*}/harness_functions
+[ -n "$extra_functions" ] && source $extra_functions
+
+trap egress EXIT
+
+no_pager || start_pager "$pager"
+
+if [ $# -gt 0 ] ; then
+	# ignore the reset of the test script, just run the single command
+	may $@
+	exit $?
+fi

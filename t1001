@@ -1,0 +1,37 @@
+#!/bin/bash
+#
+# Copyright (c) 2012 Tom Grennan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
+
+t1001_description="A single network of two ipv6 hosts with static routes."
+read -d '' t1001_diagram <<-"EOF"
+	\\th1 [fd4d:ead4:3895:c141::1]     [fd4d:ead4:3895:c141::2] h2
+	\\t   [fd4d:ead4:3895:6f35::1] --- [fd4d:ead4:3895:6f35::2]
+EOF
+
+t1001_hosts="h1 h2"
+t1001_h1_lo="fd4d:ead4:3895:c141::1/128"
+t1001_h2_lo="fd4d:ead4:3895:c141::2/128"
+t1001_nets="n1"
+t1001_n1_hosts="h1 h2"
+t1001_h1_n1="fd4d:ead4:3895:6f35::1/64"
+t1001_h2_n1="fd4d:ead4:3895:6f35::2/64"
+t1001_h1_routes="to fd4d:ead4:3895:c141::2 via fd4d:ead4:3895:6f35::2"
+t1001_h2_routes="to fd4d:ead4:3895:c141::1 via fd4d:ead4:3895:6f35::1"
+
+source ${0%/*}/netns
+
+caption 'ping h2' expect ok on h1 ping6 -A -q -c5 h2 >/dev/null
+caption 'ping h1' expect ok on h2 ping6 -A -q -c5 h1 >/dev/null

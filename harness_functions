@@ -1,0 +1,302 @@
+#!/bin/bash
+#
+# Copyright (c) 2012 Tom Grennan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
+#
+# These are generic test harness functions sourced by the harness library.
+
+exec {PagerFD}>&1		# may be redirected to one of these processes
+
+begin_html () {
+	cat <<-EOF
+		<!DOCTYPE html>
+		<html>
+		<head>
+		<style type="text/css">
+		.plain { font-family:monospace; }
+		.error { color:red; font-weight:bold; }
+		.skip { color:green; font-weight:bold; }
+		.pass { color:green; }
+		.info { color:brown; }
+		.bold-underline {
+			font-weight:bold;
+			font-size:larger;
+			text-decoration:underline;
+			margin: 10px 0px 0px 0px; }
+		.results { width:120px }
+		.count { font-family:monospace;
+			float:right;
+			width:24px; }
+		.counter { font-weight:bold; }
+		p { margin: 0px 0px 0px 0px; }
+		</style>
+		<title>$prog</title>
+		</head>
+		<body>
+		<h1>$prog</h1>
+	EOF
+}
+
+caption () {	# caption CAPTION [COMMAND [ARGS...]]
+	declare caption=$1; shift
+	[ -n "$*" ] && may $@
+}
+
+dry_run () {
+	if [[ $(type -t $1) == @(alias|function) ]] ; then
+		eval $@
+	elif test -t 0 ; then
+		echo $@ >&${PagerFD}
+	else
+		echo $@ '<<-EOF' >&${PagerFD}
+		sed 's/^/\t/' >&${PagerFD}
+		echo EOF >&${PagerFD}
+	fi
+}
+
+egress () {
+	local ecode=$1
+	trap - EXIT
+	may_show_summary
+	may_end_html
+	stop_pager
+	exit $ecode
+}
+
+end_html () {
+	may cat <<-EOF
+		</body>
+		</html>
+	EOF
+}
+
+error () {
+	say error $@ >&2
+}
+
+# expect CRITERIA COMMAND [ARGS...]
+expect_actual () {
+	local criteria=$1; shift
+	local -i ecode
+	case "$criteria" in
+	ok )	may $@
+		ecode=$?
+		;;
+	failure )
+		may $@ && ecode=1 || ecode=0
+		;;
+	output=* )
+		local pattern=${criteria/output=}
+		local output=$(may $@)
+		[[ $output == @($pattern) ]]
+		ecode=$?
+		;;
+	* )	error Unexpected criteria: $criteria
+		return 1
+		;;
+	esac
+	if [ $ecode -eq 0 ] ; then
+		let successes++ total++
+		may_show_success
+		return 0
+	elif [ ${halfsecond:-0} -eq ${lasthalfsecond:-0} ] ; then
+		let failures++ total++
+		may_show_failure "$@" ${output}
+	fi
+	return 1
+}
+
+expect_dry_run () {
+	local criteria=$1; shift
+	say plain "# expect $criteria${caption:+, }${caption}" >&${PagerFD}
+	unset caption
+	may $@
+	true
+}
+
+# retry TIMEOUT(seconds) COMMAND [ARGS...]
+retry () {
+	local -i halfsecond=1 lasthalfsecond=${1}*2; shift
+	local retry=true
+
+	until may $@ ; do
+		if [[ halfsecond -eq lasthalfsecond ]] ; then
+			return 1
+		fi
+		sleep 0.5
+		let halfsecond++
+	done
+}
+
+say_ascii () {
+	[ -z "$1" ] && quiet && return
+	local -r heading=${1/plain}
+	shift
+	if [ $# -gt 0 ] ; then
+		echo -e ${heading^^}${heading:+:} "$*"
+	else
+		if [ -n "$heading" ] ; then
+			echo -n "${heading^^}: "
+			sed "s/^/${heading^^}: /"
+		else
+			cat
+		fi
+	fi
+}
+
+say_html () {
+	[ -z "$1" ] && quiet && return
+	local -r class=$1
+	shift
+	if [ $# -gt 0 ] ; then
+		echo -n "<span class=\"$class\">"
+		printf "%s" "$*"
+		echo "</span><br>"
+	elif [ "$class" = "plain" ] ; then
+		echo "<pre>"
+		cat
+		echo "</pre>"
+	else
+		echo "<p class=\"$class\">"
+		cat
+		echo "</p>"
+	fi
+}
+
+say_tty () {
+	[ -z "$1" ] && quiet && return
+	eval local -r tty_style=\"\$tty_${1:-plain}\"
+	shift
+	if [ -n "$tty_style" ] ; then
+		set-style () { printf "%s" "$tty_style" ; }
+		reset-style () { printf "%s" "$tty_reset" ; }
+	else
+		set-style () { : ; }
+		reset-style () { : ; }
+	fi
+	set-style
+	if [ $# -gt 0 ] ; then
+		echo -n $@
+		reset-style
+		echo
+	else
+		cat
+		reset-style
+	fi
+}
+
+show_dry_run_caption () {
+	[ -n "$caption" ] && say plain "# $caption" >&${PagerFD}
+	unset caption
+}
+
+show_failure () {
+	local command=$1 ; shift
+	say error "$total. $caption${caption:+, }failure" >&${PagerFD}
+	echo "$command" | sed -e 's/^/# /' | say plain >&${PagerFD}
+	if [ $# -gt 0 ] ; then
+		echo "$*" | sed -e 's/^/#\t/' | say plain >&${PagerFD}
+	fi
+	unset caption
+}
+
+show_success () {
+	say pass "$total. $caption${caption:+, }success" >&${PagerFD}
+	unset caption
+}
+
+show_summary () {
+	if [[ total -gt 0 ]] ; then
+		printf "%9s%6d\n" Successes $successes
+		printf "%9s%6d\n" Failures  $failures
+		printf "%9s%6d\n" Total     $total
+	fi
+}
+
+show_summary_html () {
+	if [[ total -gt 0 ]] ; then
+		may cat <<-EOF
+			<p class="bold-underline">Test Results</p>
+			<div class="results">
+			<span class="count">$successes</span>
+			<span class="counter">Successes</span>
+			</div>
+			<div class="results">
+			<span class="count">$failures</span>
+			<span class="counter">Failures</span>
+			</div>
+			<div class="results">
+			<span class="count">$total</span>
+			<span class="counter">Total</span>
+			</div>
+		EOF
+	fi
+}
+
+start_pager () {
+	may sudo true		# prime sudo password cache
+	exec {SaveOut}>&1
+	exec {PagerFD}> >( flock -n $full_prog -c "$1" )
+	exec >&${PagerFD}
+}
+
+stop_pager () {
+	if [ -n "$SaveOut" ] ; then
+		exec {PagerFD}>&- 1>&- 1>&${SaveOut} {SaveOut}>&-
+		flock -x $full_prog true
+		flock -u $full_prog true
+		reset -I
+		unset SaveOut
+	fi
+}
+
+usage () {
+	local -i rcode=0
+	if [ $# -gt 0 ] ; then
+		say error "$*"
+		code=1
+	fi
+	cat <<-EOF
+		Usage: $prog [OPTIONS] [[FUNCTION|COMMAND] [ARGS]]
+		$(var description)
+		$(var diagram)
+		Options:
+		    -h, -help, --help, --usage
+		    -n, --dry-run
+		        Show what would be run.
+		    --keep-logs
+		    -o, --output <file[.html]>
+		        Format if <file> has \`.html\` suffix.
+		    --no-color
+		    --no-pager
+		    -q, --quiet
+		    -v, --verbose
+		${extra_usage}
+	EOF
+	return $rcode
+}
+
+var () {
+	local var=$topology
+	for x; do var+=_$x; done
+	eval echo -e \"\$$var\"
+}
+
+verbose () {
+	if [[ $(type -t $1) == !(alias|function) ]] ; then
+		>&${PagerFD} say info "$*"
+	fi
+	eval $@
+}

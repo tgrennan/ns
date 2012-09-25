@@ -1,5 +1,11 @@
 This package contains scripts for testing network namespaces.  The
-"netns-lib" file is a library sourced by the other scripts.  It does
-most of the work of topology configuration and generating the test
-report.  The including scripts just define topology variables and the
-respective tests. See "t0001-2-hosts" for example.
+"netns" file is a library sourced by the other scripts.  Along with its
+associate harness files, this does most of the topology configuration
+and test report generation.  The including scripts just define topology
+variables and the respective tests.  See "t????" for examples.
+
+Each test script has this name format:
+	t####
+	 ||\\_ 2 digit identifier
+	 |\___ routing { 0:static, 1:rip, 2:ospf, 3:isis, 4:bgp, >4:undefined}
+	 \____ inet { 0:ipv4, 1:ipv6, >1:undefined}

@@ -1,0 +1,52 @@
+#!/bin/bash
+#
+# Copyright (c) 2012 Tom Grennan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
+
+# The default topology prefix is the first word of the script name
+# (i.e. "t0001" of "t0001-2-hosts".  To override, set topology prior
+# to including the library; for example:
+# topology=test
+
+t0001_description="A single network of two hosts with static routes."
+read -d '' t0001_diagram <<-"EOF"
+	\\th1 [10.100.0.1]     [10.100.0.2] h2
+	\\t   [10.100.1.1] --- [10.100.1.2]
+EOF
+
+# This topology has just two hosts on a single network.
+t0001_hosts="h1 h2"
+t0001_h1_lo="10.100.0.1/32"
+t0001_h2_lo="10.100.0.2/32"
+t0001_nets="n1"
+t0001_n1_hosts="h1 h2"
+t0001_h1_n1="10.100.1.1/30 broadcast 10.100.1.3"
+t0001_h2_n1="10.100.1.2/30 broadcast 10.100.1.3"
+t0001_h1_routes="10.100.0.2/32 via 10.100.1.2"
+t0001_h2_routes="10.100.0.1/32 via 10.100.1.1"
+
+# Source the network namespace library after defining the topology.
+source ${0%/*}/netns
+
+caption 'ping h2' expect ok on h1 ping -A -c 5 -w 2 h2 >/dev/null
+caption 'ping h1' expect ok on h2 ping -A -c 5 -w 2 h1 >/dev/null
+
+# ./t0001 --no-color
+# Info: It may take up to 5 seconds to setup t0001 the name space.
+# PASS: ok 1 - ping h2
+# PASS: ok 2 - ping h1
+# Successes     2
+#  Failures     0
+#     Total     2

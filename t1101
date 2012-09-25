@@ -1,0 +1,48 @@
+#!/bin/bash
+#
+# Copyright (c) 2012 Tom Grennan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
+
+t1101_description="A single network of two ipv6 hosts with rip routing."
+read -d '' t1101_diagram <<-"EOF"
+	\\th1 [fd4d:ead4:3895:c141::1]           [fd4d:ead4:3895:c141::2] h2
+	\\t   [fe80::####:####:####:####] --- [fe80::####:####:####:####]
+EOF
+
+t1101_hosts="h1 h2"
+t1101_h1="fd4d:ead4:3895:c141::1"
+t1101_h2="fd4d:ead4:3895:c141::2"
+t1101_h1_lo="$t1101_h1/128"
+t1101_h2_lo="$t1101_h2/128"
+t1101_nets="n1"
+t1101_n1_hosts="h1 h2"
+
+read -d '' t1101_h1_Quagga <<-EOF 
+	router ripng
+	 network n1
+	 route $t1101_h1
+EOF
+read -d '' t1101_h2_Quagga <<-EOF
+	router ripng
+	 network n1
+	 route $t1101_h2
+EOF
+
+source ${0%/*}/netns
+
+caption convergence retry 5 expect output="\'$t1101_h2 via*\'" \
+	on h1 ip -6 route list $t1101_h2
+caption 'ping h2' expect ok on h1 ping6 -A -c5 h2 >/dev/null
+caption 'ping h1' expect ok on h2 ping6 -A -c5 h1 >/dev/null

@@ -15,26 +15,37 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see http://www.gnu.org/licenses/ .
 
-. ${0%/*}/netns-lib
-
 test_description="No name spaces at all, just testing the harness."
 
+source ${0%/*}/netns
+
 example-message () {		# STYLE ....
-	c=$1; shift
-	color $c This is the first \"double-quoted\" line of an $1 message.
-	color $c <<-EOF
-		This is the second line...
-		and third lines.
+	style=$1; shift
+	say "$style" This is the first line of a $style message.
+	say $style This is the secondline with \"double-quotes\".
+	say $style This is the third line with \'single-quotes\'.
+	say $style <<-EOF
+		This is the fourth...
+		fifth...
+		and final line.
 	EOF
-	color $c This is the fourth and final \'single-quoted\' line.
 }
 
-netns '' example-message error
-netns '' example-message skip
-netns '' example-message pass
-netns '' example-message info
-netns '' nullout echo You will not see this unless --dry-run.
-netns '' as-root-here-tee /tmp/$prog-here-example <<-EOF
+for m in plain error skip pass info ; do
+	caption "$m-message" expect ok example-message $m
+done
+
+caption "expect ok" expect ok true
+caption "expect failure" expect failure false
+caption "expect output match" expect output=foo echo -n foo
+
+may say plain You will not see this unless --dry-run. >/dev/null
+may tee /tmp/$prog-here-example <<-EOF >/dev/null
 	This is a here document example.
 EOF
-netns '' as-root rm -f /tmp/$prog-here-example
+caption compare expect ok cmp -b /tmp/$prog-here-example - <<-EOF
+	This is a here document example.
+EOF
+may rm -f /tmp/$prog-here-example
+
+caption pipeline expect ok say plain foo bar \| grep -q foo

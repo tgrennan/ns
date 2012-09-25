@@ -1,0 +1,57 @@
+#!/bin/bash
+#
+# Copyright (c) 2012 Tom Grennan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
+
+t1102_description="A bridged ipv6 network with rip routing of host addresses."
+read -d '' t1102_diagram <<-"EOF"
+	\\th1 --- b1 --- h2
+EOF
+
+t1102_hosts="h1 h2 b1"
+t1102_h1="fd4d:ead4:3895:c141::1"
+t1102_h2="fd4d:ead4:3895:c141::2"
+t1102_b1="fd4d:ead4:3895:c141::11"
+t1102_h1_lo="$t1102_h1/128"
+t1102_h2_lo="$t1102_h2/128"
+t1102_b1_lo="$t1102_b1/128"
+t1102_nets="n1 n2"
+t1102_n1_hosts="h1 b1"
+t1102_n2_hosts="b1 h2"
+t1102_b1_bridges="b1"
+t1102_b1_b1_nets="n1 n2"
+
+read -d '' t1102_h1_Quagga <<-EOF 
+	router ripng
+	 network n1
+	 route $t1102_h1
+EOF
+read -d '' t1102_h2_Quagga <<-EOF
+	router ripng
+	 network n1
+	 route $t1102_h2
+EOF
+read -d '' t1102_b1_Quagga <<-EOF
+	router ripng
+	 network b1
+	 route $t1102_b1
+EOF
+
+source ${0%/*}/netns
+
+caption convergence retry 10 expect output="\'$t1102_h2 via*\'" \
+	on h1 ip -6 route list $t1102_h2
+caption 'ping h2' expect ok on h1 ping6 -A -c5 h2 >/dev/null
+caption 'ping h1' expect ok on h2 ping6 -A -c5 h1 >/dev/null

@@ -1,0 +1,64 @@
+#!/bin/bash
+#
+# Copyright (c) 2012 Tom Grennan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
+#
+# This is a test harness for network name spaces.
+# Regression scripts must define the topology variables before
+# sourcing this harness; then follow with the test(s). For example,
+#
+#	tXXXX_description="..."
+#	read -d '' tXXXX_diagram <<-"EOF"
+#		...
+#	EOF
+#	tXXXX_hosts="h1 h2"
+#	tXXXX_nets="n1"
+#	tXXXX_net1_hosts="h1 h2"
+#	tXXXX_h1_n1="192.168.0.1/30 broadcast 192.168.0.3"
+#	tXXXX_h2_n1="192.168.0.2/30 broadcast 192.168.0.3"
+#
+#	source ${0%/*}/netns
+#
+#	caption 'ping h2' expect ok on h1 ping -A -c5 -w2 host2 >/dev/null
+#	caption 'ping h1' expect ok on h2 ping -A -c5 -w2 host1 >/dev/null
+#
+# See README for more info and the t###-* scripts for examples.
+
+read -d '' extra_usage <<-EOF
+	Functions:
+	    var [VARIABLE...]
+	        Show the named topology variable; examples:
+	            description
+	            diagram
+	            hosts
+	            nets
+	    begin | end
+	        Start or stop the configured topology.
+	    expect CRITERIA CAPTION COMMAND [ARGS...]
+	        Criteria: ok|failure|output=PATTERN
+	    on HOST COMMAND
+	        Execute a command within the given host name space.
+	    retry TIMEOUT CRITERIA CAPTION COMMAND [ARGS...]
+	        Command is repeated every half second upto the given
+	        number of seconds until the criteria is met.
+EOF
+
+declare -r extra_functions=${0%/*}/netns_functions
+source ${0%/*}/harness
+
+# prepend namespace teardown to test harnes egress
+extract_trap_cmd () { echo ${3//\'}; }
+trap -- "may end; $(extract_trap_cmd $(trap -p EXIT))" EXIT
+may begin

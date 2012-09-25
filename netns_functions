@@ -1,0 +1,305 @@
+#!/bin/bash
+#
+# Copyright (c) 2012 Tom Grennan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
+#
+# These are the extra name space functions sourced into the harness.
+
+addresses () {		# HOST DEV
+	local host=$1 dev=$2 ; shift 2
+	local addresses=$(var $host $dev)
+	if [ -n "$addresses" ] ; then
+		local saveifs=$IFS
+		IFS=$(echo -e "\n\b")
+		for addr in $addresses ; do
+			on $host ip addr add $addr dev $dev
+		done
+		IFS=$saveifs
+	fi
+	on $host ip link set $dev up
+}
+
+begin () {
+	may say info It may take up to 5 seconds to setup $topology.
+	ip_forward_enable
+	construct_etc_netns
+	construct_hosts
+	construct_nets
+	construct_bridges
+	construct_routes
+	construct_routers
+}
+
+construct_etc_netns () {
+	may sudo mkdir -p /etc/netns
+	grep -q netns /proc/mounts ||
+		may sudo mount -t tmpfs none /etc/netns
+}
+
+construct_hosts () {
+	may sudo mkdir -p /etc/netns/$topology
+	>/dev/null may sudo tee /etc/netns/$topology/hosts <<-EOF
+		127.0.0.1	localhost
+		::1		ip6-localhost	ip6-loopback
+		fe00::0		ip6-localnet
+		ff00::0		ip6-mcasttopology
+		ff02::1 	ip6-allnodes
+		ff02::2		ip6-allrouters
+
+	EOF
+	for host in $(var hosts); do
+		local lo=$(var $host lo)
+		>/dev/null may sudo tee -a /etc/netns/$topology/hosts <<-EOF
+			${lo//\/+([[:digit:]])}	$host
+		EOF
+		# prepend standard loopback addresses
+		read -d '' lo <<-EOF
+			127.0.0.1/8
+			::1/128
+			$lo
+		EOF
+		eval ${topology}_${host}_lo=\"\$lo\"
+	done
+	for host in $(var hosts); do
+		local netns=$topology-$host
+		may sudo mkdir -p /etc/netns/$netns
+		>/dev/null may sudo tee /etc/netns/$netns/hostname <<-EOF
+			$host
+		EOF
+		may sudo cp /etc/netns/$topology/hosts /etc/netns/$netns/hosts
+		may sudo ip netns add $netns
+		addresses $host lo
+	done
+}
+
+construct_nets () {
+	for net in $(var nets); do
+		local -i vethidx=0
+		local hosts=$(var $net hosts)
+		may sudo ip link add type veth
+		for host in $hosts; do
+			may sudo ip link set dev veth$vethidx \
+				netns $topology-$host name $net
+			addresses $host $net
+			let vethidx++
+		done
+	done
+}
+
+construct_bridges () {
+	for host in $(var hosts); do
+		for bridge in $(var $host bridges); do
+			on $host ip link add dev $bridge type bridge
+			for net in $(var $host $bridge nets); do
+				on $host ip link set $net master $bridge
+			done
+			local addr=$(var $host $bridge)
+			if [ -n "$addr" ] ; then
+				on $host ip addr add $addr dev $bridge
+			fi
+			on $host ip link set $bridge up
+		done
+	done
+}
+
+construct_routes () {
+	for host in $(var hosts); do
+		local routes=$(var $host routes)
+		if [ -n "$routes" ] ; then
+			local saveifs=$IFS
+			IFS=$(echo -e "\n\b")
+			for route in $routes ; do
+				on $host ip route add $route
+			done
+			IFS=$saveifs
+		fi
+	done
+}
+
+construct_routers () {
+	if [ ! -d /etc/quagga/run ] ; then
+		may sudo mkdir -p /etc/quagga/run
+		may sudo chown quagga:quagga /etc/quagga/run
+	fi
+	if [ ! -L /var/run/quagga ] ; then
+		may sudo rmdir /var/run/quagga
+		may sudo ln -sf /etc/quagga/run /var/run/quagga
+	fi
+	for host in $(var hosts); do
+		local netns=$topology-$host
+		local etcdir=/etc/netns/$netns/quagga
+		local Quagga=$(var $host Quagga)
+		if [ -n "$Quagga" ] ; then
+			if [ ! -d $etcdir ] ; then
+				may sudo mkdir $etcdir
+				may sudo chown quagga:quaggavty $etcdir
+				may sudo chmod 775 $etcdir
+			fi
+			if [ ! -d $etcdir/run ] ; then
+				may sudo mkdir $etcdir/run
+				may sudo chown quagga:quaggavty $etcdir/run
+				may sudo chmod 755 $etcdir/run
+			fi
+			construct_routers_vtysh_conf
+			construct_routers_quagga_conf
+		fi
+	done
+	for host in $(var hosts); do
+		local Quagga=$(var $host Quagga)
+		if [ -n "$Quagga" ] ; then
+			on $host /usr/lib/quagga/zebra -d
+			for r in rip ripng ospf ospf6 isis bgp ; do
+				[[ $Quagga == @(*router ${r}[[:space:]]*) ]] &&
+					on $host /usr/lib/quagga/${r}d -d
+			done
+			on $host /usr/bin/vtysh -b
+		fi
+	done
+}
+
+construct_routers_vtysh_conf () {
+	>/dev/null may sudo tee $etcdir/vtysh.conf <<-EOF
+		service integrated-vtysh-config
+		hostname $netns
+		username root nopassword
+		username $USER nopassword
+	EOF
+	may sudo chown quagga:quaggavty $etcdir/vtysh.conf
+	may sudo chmod 660 $etcdir/vtysh.conf
+}
+
+construct_routers_quagga_conf () {
+	>/dev/null may sudo tee $etcdir/Quagga.conf <<-EOF
+		hostname $netns
+		password zebra
+		enable password zebra
+		service advanced-vty
+		!
+		log file /var/log/quagga/$netns
+		!
+		interface lo
+		 description host $host
+		 link-detect
+	EOF
+	for net in $(var nets) ; do
+		local netaddr=$(var $host $net)
+		test -n "$netaddr" &&
+		>/dev/null \
+		may sudo tee -a $etcdir/Quagga.conf <<-EOF
+			interface $net
+			 description host $net
+			 link-detect
+		EOF
+	done
+	>/dev/null may sudo tee -a $etcdir/Quagga.conf <<-EOF
+		!
+		$Quagga
+	EOF
+	may sudo chown quagga:quagga $etcdir/Quagga.conf
+	may sudo chmod 640 $etcdir/Quagga.conf
+}
+
+end () {
+	raze_routers
+	raze_bridges
+	raze_nets
+	raze_hosts
+	raze_etc_netns
+}
+
+ip_forward_enable () {
+	>/dev/null may sudo tee -a /proc/sys/net/ipv4/ip_forward <<-EOF
+		1
+	EOF
+}
+
+ip_forward_disable () {
+	>/dev/null may sudo tee -a /proc/sys/net/ipv4/ip_forward <<-EOF
+		0
+	EOF
+}
+
+on () {
+	local netns=$topology-$1; shift
+	if ! accessible /var/run/netns/$netns ; then
+		say error Can\'t find $netns name space. >&2
+		return 1
+	fi
+	if [ $# -eq 0 ] ; then
+		stop_pager
+		may sudo PS1=\'netns:$netns\\$ \' \
+			ip netns exec $netns bash --norc -i
+	elif [ "$1" = "vtysh" ] ; then
+		case "$2" in
+		-c )	shift 2
+			may sudo VTYSH_PAGER=/bin/cat \
+				ip netns exec $netns vtysh -c \"$@\"
+			;;
+		-b )	may sudo ip netns exec $netns $@ ;;
+		* | "")	stop_pager
+			may sudo VTYSH_PAGER=/usr/bin/less LESS=-LFrSXE \
+				ip netns exec $netns vtysh
+			;;
+		esac
+	else
+		may sudo ip netns exec $netns $@
+	fi
+}
+
+raze_etc_netns () {
+	test `ls /etc/netns | wc -l` -eq 0 &&
+		may sudo umount /etc/netns
+}
+
+raze_hosts () {
+	for host in $(var hosts); do
+		local netns=$topology-$host
+		on $host ip link set lo down
+		may sudo ip netns delete $netns
+		may sudo rm -rf /etc/netns/$netns
+	done
+	may sudo rm -rf /etc/netns/$topology
+}
+
+raze_nets () {
+	for net in $(var nets); do
+		for host in $(var $net hosts); do
+			on $host ip link set $net down
+			on $host ip link delete $net
+			break
+		done
+	done
+}
+
+raze_bridges () {
+	for host in $(var hosts); do
+		for bridge in $(var $host bridges); do
+			on $host ip link set $bridge down
+			on $host ip link delete $bridge
+		done
+	done
+}
+
+raze_routers () {
+	shopt -s nullglob
+	for host in $(var hosts); do
+		local netns=$topology-$host
+		for pid_file in /etc/netns/$netns/quagga/run/*.pid ; do
+			local pid=$(cat $pid_file)
+			may sudo kill $pid
+		done
+		keep_logs || may sudo rm -rf /var/log/quagga/$netns
+	done
+}
