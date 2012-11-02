@@ -1,0 +1,127 @@
+#!/bin/bash
+#
+# Copyright (c) 2012 Tom Grennan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
+
+# This is a shared topology script. If named t1103 it uses RIPNG;
+# otherwise, OSPF6.
+
+prog=${0##*/}
+: ${topology:=${prog%%-*}}
+[ "$topology" = "t1103" ] && ROUTER=ripng || ROUTER=ospf6
+read -d '' ${topology}_description <<-EOF
+	A meshed ipv6 network with $ROUTER routing of host addresses.
+EOF
+read -d '' ${topology}_diagram <<-"EOF"
+	\\track0row0col0 rack0row0col1 ... rack0row0colX 
+	\\track0row1col0 rack0row1col1 ... rack0row1colX 
+	\\t...
+	\\track0rowYcol0 rack0rowYcol1 ... rack0rowYcolX 
+
+	Where X and Y must be modulo 2 limits, i.e. 2, 4, 8, etc. (default 4)
+EOF
+
+: ${X:=4} ${Y:=4} ${Z:=1}
+declare -i addr=0
+readonly ipv6net="fd4d:ead4:3895:c141"
+
+append () {
+	if eval '[ -z "$'$1'" ]'; then
+		eval "$1=\"$2\""
+	else
+		eval "$1+=\" $2\""
+	fi
+}
+
+convergence () {
+	caption convergence retry 60 expect \
+		output="\'$ipv6net::$((X*Y)) via*\'" \
+		on rack0row0col0 ip -6 route list $ipv6net::$((X*Y))
+}
+
+declare_host_and_westward_net () {
+	let addr++
+	ohost=rack${z}row${y}col$(( (x-1) & ($X - 1) ))
+	append ${topology}_hosts $HOST
+	eval ${topology}_${HOST}_lo="$ipv6net::$addr/128"
+	net=rack${z}row${y}net${x}
+	append ${topology}_nets ${net}
+	eval ${topology}_${net}_hosts=\"$HOST $ohost\"
+	eval declare_host_router_$ROUTER
+}
+
+declare_host_router_ospf6 () {
+	read -d '' ${topology}_${HOST}_Quagga <<-EOF
+		router ospf6
+		 router-id 10.0.0.$addr
+		 interface rack${z}row${y}net${x} area 0.0.0.0
+		 interface rack${z}row${y}net$(((x+1)&($X-1))) area 0.0.0.0
+		 interface rack${z}col${x}net${y} area 0.0.0.0
+		 interface rack${z}col${x}net$(((y+1)&($Y-1))) area 0.0.0.0
+		 area 0.0.0.0 range $ipv6net::$addr/128
+		 redistribute connected
+	EOF
+}
+
+declare_host_router_ripng () {
+	read -d '' ${topology}_${HOST}_Quagga <<-EOF
+		router ripng
+		 network rack${z}row${y}net${x}
+		 network rack${z}row${y}net$(((x+1)&($X-1)))
+		 network rack${z}col${x}net${y}
+		 network rack${z}col${x}net$(((y+1)&($Y-1)))
+		 route $ipv6net::$addr
+	EOF
+}
+
+declare_northern_nets () {
+	for (( z=0; z<$Z; z++ )) ; do
+		for (( x=0; x<$X; x++ )) ; do
+			for (( y=0; y<$Y; y++ )) ; do
+				net=rack${z}col${x}net${y}
+				host=rack${z}row${y}col${x}
+				ohost=rack${z}row$(( (y-1) & ($Y - 1)))col${x}
+				append ${topology}_nets $net
+				eval ${topology}_${net}_hosts=\"$host $ohost\"
+			done
+		done
+	done
+}
+
+for_all_hosts () {	# for_all_hosts HOST_VAR_NAME COMMAND [ARGS...]
+	local name=$1; shift
+	local -i z y x		# this may be recursive so use local scope
+	for ((z=0; z<$Z; z++)) ; do
+		for ((y=0; y<$Y; y++)) ; do
+			for ((x=0; x<$X; x++)) ; do
+				eval local $name=rack${z}row${y}col${x}
+				eval $@
+			done
+		done
+	done
+}
+
+piiiiing () {
+	caption "$SOURCE ping $DEST" expect ok on $SOURCE \
+		ping6 -A -c5 $DEST >/dev/null
+}
+
+for_all_hosts HOST declare_host_and_westward_net
+declare_northern_nets
+
+source ${0%/*}/netns
+
+convergence
+for_all_hosts SOURCE for_all_hosts DEST piiiiing
