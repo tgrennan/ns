@@ -213,10 +213,18 @@ ip_forward_enable () {
 	>/dev/null may sudo tee -a /proc/sys/net/ipv4/ip_forward <<-EOF
 		1
 	EOF
+	>/dev/null may sudo tee -a /proc/sys/net/ipv6/conf/default/forwarding \
+	<<-EOF
+		1
+	EOF
 }
 
 ip_forward_disable () {
 	>/dev/null may sudo tee -a /proc/sys/net/ipv4/ip_forward <<-EOF
+		0
+	EOF
+	>/dev/null may sudo tee -a /proc/sys/net/ipv6/conf/default/forwarding \
+	<<-EOF
 		0
 	EOF
 }
