@@ -19,20 +19,15 @@
 
 addresses () {		# HOST DEV
 	local host=$1 dev=$2 ; shift 2
-	local addresses=$(var $host $dev)
-	if [ -n "$addresses" ] ; then
-		local saveifs=$IFS
-		IFS=$(echo -e "\n\b")
-		for addr in $addresses ; do
-			on $host ip addr add $addr dev $dev
-		done
-		IFS=$saveifs
-	fi
+	local -a a=( $(var $host $dev) )
+	for ((i=0; i<${#a[@]}; i++)) ; do
+		on $host ip addr add ${a[i]} dev $dev
+	done
 	on $host ip link set $dev up
 }
 
 begin () {
-	may say info It may take up to 5 seconds to setup $topology.
+	may say info It may take several seconds to setup $topology.
 	ip_forward_enable
 	construct_etc_netns
 	construct_hosts
@@ -65,12 +60,7 @@ construct_hosts () {
 			${lo//\/+([[:digit:]])}	$host
 		EOF
 		# prepend standard loopback addresses
-		read -d '' lo <<-EOF
-			127.0.0.1/8
-			::1/128
-			$lo
-		EOF
-		eval ${topology}_${host}_lo=\"\$lo\"
+		eval ${topology}_${host}_lo=\"127.0.0.1/8 ::1/128 $lo\"
 	done
 	for host in $(var hosts); do
 		local netns=$topology-$host
