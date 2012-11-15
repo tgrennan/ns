@@ -17,13 +17,12 @@
 #
 # These are the extra name space functions sourced into the harness.
 
-addresses () {		# HOST DEV
+addresses () {		# HOST DEV [ADDRESSES...]
 	local host=$1 dev=$2 ; shift 2
-	local -a a=( $(var $host $dev) )
-	for ((i=0; i<${#a[@]}; i++)) ; do
-		on $host ip addr add ${a[i]} dev $dev
+	eval for ifaddr in $@ \"\$\{${topology}_${host}_${dev}\[@\]\}\" \;\
+	do \
+		on $host ip addr add \$ifaddr dev $dev \;\
 	done
-	on $host ip link set $dev up
 }
 
 begin () {
@@ -59,8 +58,6 @@ construct_hosts () {
 		>/dev/null may sudo tee -a /etc/netns/$topology/hosts <<-EOF
 			${lo//\/+([[:digit:]])}	$host
 		EOF
-		# prepend standard loopback addresses
-		eval ${topology}_${host}_lo=\"127.0.0.1/8 ::1/128 $lo\"
 	done
 	for host in $(var hosts); do
 		local netns=$topology-$host
@@ -70,7 +67,8 @@ construct_hosts () {
 		EOF
 		may sudo cp /etc/netns/$topology/hosts /etc/netns/$netns/hosts
 		may sudo ip netns add $netns
-		addresses $host lo
+		addresses $host lo 127.0.0.1/8 ::1/128
+		on $host ip link set lo up
 	done
 }
 
@@ -83,6 +81,7 @@ construct_nets () {
 			may sudo ip link set dev veth$vethidx \
 				netns $topology-$host name $net
 			addresses $host $net
+			on $host ip link set $net up
 			let vethidx++
 		done
 	done
