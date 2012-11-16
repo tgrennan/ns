@@ -105,15 +105,10 @@ construct_bridges () {
 
 construct_routes () {
 	for host in $(var hosts); do
-		local routes=$(var $host routes)
-		if [ -n "$routes" ] ; then
-			local saveifs=$IFS
-			IFS=$(echo -e "\n\b")
-			for route in $routes ; do
-				on $host ip route add $route
-			done
-			IFS=$saveifs
-		fi
+		eval for route in \"\$\{${topology}_${host}_routes\[@\]\}\" \;\
+		do \
+			on $host ip route add \$route \;\
+		done
 	done
 }
 
