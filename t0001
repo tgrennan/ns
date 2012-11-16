@@ -20,30 +20,46 @@
 # to including the library; for example:
 # topology=test
 
-t0001_description="Two point-to-point hosts."
+t0001_description="Two networks with static routes"
 read -d '' t0001_diagram <<-"EOF"
-	\\th1 [10.100.0.1] --- [10.100.0.2] h2
+	\\th1 --- r1 --- h2
 EOF
 
-# This topology has just two hosts on a single network.
-t0001_hosts="h1 h2"
-t0001_h1_lo="10.100.0.1/32"
-t0001_h2_lo="10.100.0.2/32"
-t0001_nets="n1"
-t0001_n1_hosts="h1 h2"
-t0001_h1_n1="10.100.0.1 peer 10.100.0.2/32"
-t0001_h2_n1="10.100.0.2 peer 10.100.0.1/32"
+t0001_hosts="h1 r1 h2"
+t0001_h1="10.100.0.1"
+t0001_r1="10.100.0.11"
+t0001_h2="10.100.0.2"
+t0001_h1_lo="$t0001_h1/32"
+t0001_r1_lo="$t0001_r1/32"
+t0001_h2_lo="$t0001_h2/32"
+t0001_nets="n1 n2"
+t0001_n1_hosts="h1 r1"
+t0001_n2_hosts="r1 h2"
+t0001_h1_n1="$t0001_h1 peer $t0001_r1_lo"
+t0001_r1_n1="$t0001_r1 peer $t0001_h1_lo"
+t0001_r1_n2="$t0001_r1 peer $t0001_h2_lo"
+t0001_h2_n2="$t0001_h2 peer $t0001_r1_lo"
+t0001_h1_routes="$t0001_h2_lo via $t0001_r1"
+t0001_h2_routes="$t0001_h1_lo via $t0001_r1"
 
 # Source the network namespace library after defining the topology.
 source ${0%/*}/netns
 
-caption 'ping h2' expect ok on h1 ping -A -c 5 -w 2 h2 >/dev/null
-caption 'ping h1' expect ok on h2 ping -A -c 5 -w 2 h1 >/dev/null
+caption 'h1 ping r1' expect ok on h1 ping -A -c5 -w2 r1 >/dev/null
+caption 'r1 ping h2' expect ok on r1 ping -A -c5 -w2 h2 >/dev/null
+caption 'h1 ping h2' expect ok on h1 ping -A -c5 -w2 h2 >/dev/null
+caption 'h2 ping r1' expect ok on h2 ping -A -c5 -w2 r1 >/dev/null
+caption 'r1 ping h1' expect ok on r1 ping -A -c5 -w2 h1 >/dev/null
+caption 'h2 ping h1' expect ok on h2 ping -A -c5 -w2 h1 >/dev/null
 
 # ./t0001 --no-color
-# Info: It may take up to 5 seconds to setup t0001 the name space.
-# PASS: ok 1 - ping h2
-# PASS: ok 2 - ping h1
-# Successes     2
+# INFO: It may take several seconds to setup t0001.
+# PASS: 1. h1 ping r1, success
+# PASS: 2. r1 ping h2, success
+# PASS: 3. h1 ping h2, success
+# PASS: 4. h2 ping r1, success
+# PASS: 5. r1 ping h1, success
+# PASS: 6. h2 ping h1, success
+# Successes     6
 #  Failures     0
-#     Total     2
+#     Total     6
