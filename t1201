@@ -15,40 +15,51 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see http://www.gnu.org/licenses/ .
 
-t1201_description="A single network of two ipv6 hosts with ospf"
+t1201_description="Two ipv6 networks with ospf routing"
 read -d '' t1201_diagram <<-"EOF"
-	\\th1 [fd4d:ead4:3895:c141::1]           [fd4d:ead4:3895:c141::2] h2
-	\\t   [fe80::####:####:####:####] --- [fe80::####:####:####:####]
+	\\th1 --- r1 --- h2
 EOF
 
-t1201_hosts="h1 h2"
+t1201_hosts="h1 r1 h2"
 t1201_h1="fd4d:ead4:3895:c141::1"
+t1201_r1="fd4d:ead4:3895:c141::11"
 t1201_h2="fd4d:ead4:3895:c141::2"
 t1201_h1_lo="$t1201_h1/128"
+t1201_r1_lo="$t1201_r1/128"
 t1201_h2_lo="$t1201_h2/128"
-t1201_nets="n1"
-t1201_n1_hosts="h1 h2"
+t1201_nets="n1 n2"
+t1201_n1_hosts="h1 r1"
+t1201_n2_hosts="r1 h2"
 
-read -d '' t1201_Quagga <<-"EOF"
+read -d '' t1201_h1_Quagga <<-EOF
 	router ospf6
-	 router-id $router_id
+	 router-id 10.0.0.${t1201_h1##*:}
 	 interface n1 area 0.0.0.0
-	 area 0.0.0.0 range $network_lo
+	 area 0.0.0.0 range $t1201_h1_lo
+	 redistribute connected
+EOF
+read -d '' t1201_r1_Quagga <<-EOF
+	router ospf6
+	 router-id 10.0.0.${t1201_r1##*:}
+	 interface n1 area 0.0.0.0
+	 interface n2 area 0.0.0.0
+	 area 0.0.0.0 range $t1201_r1_lo
+	 redistribute connected
+EOF
+read -d '' t1201_h2_Quagga <<-EOF
+	router ospf6
+	 router-id 10.0.0.${t1201_h2##*:}
+	 interface n2 area 0.0.0.0
+	 area 0.0.0.0 range $t1201_h2_lo
 	 redistribute connected
 EOF
 
-for host in $t1201_hosts ; do
-	eval host_addr=\$t1201_$host
-	eval router_id=10.0.0.${host_addr##*:}
-	eval network_lo=\$t1201_${host}_lo
-	eval t1201_${host}_Quagga=\""$t1201_Quagga"\"
-done
-
 source ${0%/*}/netns
 
-export TIMEFORMAT="%R seconds"
 may say info OSPF may take up to 60 seconds to converge.
-caption convergence retry 60 expect output="\'$t1201_h2 via*\'" \
+caption "h1 converge h2" retry 60 expect output="\'$t1201_h2 via*\'" \
 	on h1 ip -6 route list $t1201_h2
-caption 'ping h2' expect ok on h1 ping6 -A -q -c5 h2 >/dev/null
-caption 'ping h1' expect ok on h1 ping6 -A -q -c5 h1 >/dev/null
+caption 'h1 ping r1' retry 10 expect ok on h1 ping6 -Ac5 r1 >/dev/null
+caption 'h1 ping h2' retry 10 expect ok on h1 ping6 -Ac5 h2 >/dev/null
+caption 'h2 ping r1' retry 10 expect ok on h2 ping6 -Ac5 r1 >/dev/null
+caption 'h2 ping h1' retry 10 expect ok on h2 ping6 -Ac5 h1 >/dev/null

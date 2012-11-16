@@ -15,23 +15,34 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see http://www.gnu.org/licenses/ .
 
-t1001_description="A single network of two ipv6 hosts with static routes."
+t1001_description="Two ipv6 networks with static routes"
 read -d '' t1001_diagram <<-"EOF"
-	\\th1 [fd4d:ead4:3895:c141::1]     [fd4d:ead4:3895:c141::2] h2
-	\\t   [fd4d:ead4:3895:6f35::1] --- [fd4d:ead4:3895:6f35::2]
+	\\th1 --- r1 --- h2
 EOF
 
-t1001_hosts="h1 h2"
-t1001_h1_lo="fd4d:ead4:3895:c141::1/128"
-t1001_h2_lo="fd4d:ead4:3895:c141::2/128"
-t1001_nets="n1"
-t1001_n1_hosts="h1 h2"
-t1001_h1_n1="fd4d:ead4:3895:6f35::1/64"
-t1001_h2_n1="fd4d:ead4:3895:6f35::2/64"
-t1001_h1_routes="to fd4d:ead4:3895:c141::2 via fd4d:ead4:3895:6f35::2"
-t1001_h2_routes="to fd4d:ead4:3895:c141::1 via fd4d:ead4:3895:6f35::1"
+t1001_hosts="h1 r1 h2"
+t1001_h1="fd4d:ead4:3895:c141::1"
+t1001_r1="fd4d:ead4:3895:c141::11"
+t1001_h2="fd4d:ead4:3895:c141::2"
+t1001_h1_lo="$t1001_h1/128"
+t1001_r1_lo="$t1001_r1/128"
+t1001_h2_lo="$t1001_h2/128"
+t1001_nets="n1 n2"
+t1001_n1_hosts="h1 r1"
+t1001_n2_hosts="r1 h2"
+t1001_h1_n1="$t1001_h1_lo"
+t1001_r1_n1="$t1001_r1_lo"
+t1001_r1_n2="$t1001_r1_lo"
+t1001_h2_n2="$t1001_h2_lo"
+t1001_h1_routes=( "$t1001_r1_lo dev n1" "$t1001_h2_lo via $t1001_r1" )
+t1001_r1_routes=( "$t1001_h1_lo dev n1" "$t1001_h2_lo dev n2" )
+t1001_h2_routes=( "$t1001_r1_lo dev n2" "$t1001_h1_lo via $t1001_r1" )
 
 source ${0%/*}/netns
 
-caption 'ping h2' expect ok on h1 ping6 -A -q -c5 h2 >/dev/null
-caption 'ping h1' expect ok on h2 ping6 -A -q -c5 h1 >/dev/null
+caption 'h1 ping r1' expect ok on h1 ping6 -Ac5 r1 >/dev/null
+caption 'r1 ping h2' expect ok on r1 ping6 -Ac5 h2 >/dev/null
+caption 'h1 ping h2' expect ok on h1 ping6 -Ac5 h2 >/dev/null
+caption 'h2 ping r1' expect ok on h2 ping6 -Ac5 r1 >/dev/null
+caption 'r1 ping h1' expect ok on r1 ping6 -Ac5 h1 >/dev/null
+caption 'h2 ping h1' expect ok on h2 ping6 -Ac5 h1 >/dev/null

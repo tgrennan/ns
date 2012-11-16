@@ -15,34 +15,46 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see http://www.gnu.org/licenses/ .
 
-t1101_description="A single network of two ipv6 hosts with rip routing."
+t1101_description="Two ipv6 networks with rip routing"
 read -d '' t1101_diagram <<-"EOF"
-	\\th1 [fd4d:ead4:3895:c141::1]           [fd4d:ead4:3895:c141::2] h2
-	\\t   [fe80::####:####:####:####] --- [fe80::####:####:####:####]
+	\\th1 --- r1 --- h2
 EOF
 
-t1101_hosts="h1 h2"
+t1101_hosts="h1 r1 h2"
 t1101_h1="fd4d:ead4:3895:c141::1"
+t1101_r1="fd4d:ead4:3895:c141::11"
 t1101_h2="fd4d:ead4:3895:c141::2"
 t1101_h1_lo="$t1101_h1/128"
+t1101_r1_lo="$t1101_r1/128"
 t1101_h2_lo="$t1101_h2/128"
-t1101_nets="n1"
-t1101_n1_hosts="h1 h2"
+t1101_nets="n1 n2"
+t1101_n1_hosts="h1 r1"
+t1101_n2_hosts="r1 h2"
 
-read -d '' t1101_h1_Quagga <<-EOF 
+read -d '' t1101_h1_Quagga <<-EOF
 	router ripng
 	 network n1
-	 route $t1101_h1
+	 route $t1101_h1_lo
+EOF
+read -d '' t1101_r1_Quagga <<-EOF
+	router ripng
+	 network n1
+	 network n2
+	 route $t1101_r1_lo
 EOF
 read -d '' t1101_h2_Quagga <<-EOF
 	router ripng
-	 network n1
-	 route $t1101_h2
+	 network n2
+	 route $t1101_h2_lo
 EOF
 
 source ${0%/*}/netns
 
 caption convergence retry 5 expect output="\'$t1101_h2 via*\'" \
 	on h1 ip -6 route list $t1101_h2
-caption 'ping h2' expect ok on h1 ping6 -A -c5 h2 >/dev/null
-caption 'ping h1' expect ok on h2 ping6 -A -c5 h1 >/dev/null
+caption 'h1 ping r1' expect ok on h1 ping6 -Ac5 r1 >/dev/null
+caption 'r1 ping h2' expect ok on r1 ping6 -Ac5 h2 >/dev/null
+caption 'h1 ping h2' expect ok on h1 ping6 -Ac5 h2 >/dev/null
+caption 'h2 ping r1' expect ok on h2 ping6 -Ac5 r1 >/dev/null
+caption 'r1 ping h1' expect ok on r1 ping6 -Ac5 h1 >/dev/null
+caption 'h2 ping h1' expect ok on h2 ping6 -Ac5 h1 >/dev/null
