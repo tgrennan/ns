@@ -15,39 +15,54 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see http://www.gnu.org/licenses/ .
 
-t0101_description="A single network of two hosts with ripd."
+t0101_description="Two networks with rip."
 read -d '' t0101_diagram <<-"EOF"
-	\\th1 [10.100.0.1]     [10.100.0.2] h2
-	\\t   [10.100.1.1] --- [10.100.1.2]
+	\\th1 --- r1 --- h2
 EOF
 
-t0101_hosts="h1 h2"
+t0101_hosts="h1 r1 h2"
 t0101_h1="10.100.0.1"
+t0101_r1="10.100.0.11"
 t0101_h2="10.100.0.2"
 t0101_h1_lo="$t0101_h1/32"
+t0101_r1_lo="$t0101_r1/32"
 t0101_h2_lo="$t0101_h2/32"
-t0101_nets="n1"
-t0101_n1_hosts="h1 h2"
-t0101_h1_n1="10.100.1.1/30 broadcast 10.100.1.3"
-t0101_h2_n1="10.100.1.2/30 broadcast 10.100.1.3"
+t0101_nets="n1 n2"
+t0101_n1_hosts="h1 r1"
+t0101_n2_hosts="r1 h2"
+t0101_h1_n1="$t0101_h1 peer $t0101_r1_lo"
+t0101_r1_n1="$t0101_r1 peer $t0101_h1_lo"
+t0101_r1_n2="$t0101_r1 peer $t0101_h2_lo"
+t0101_h2_n2="$t0101_h2 peer $t0101_r1_lo"
 
 read -d '' t0101_h1_Quagga <<-EOF 
 	router rip
-	 network 10.100.1.0/30
 	 network n1
-	 route $t0101_h1/32
+	 route $t0101_h1_lo
+EOF
+
+read -d '' t0101_r1_Quagga <<-EOF
+	router rip
+	 network n1
+	 network n2
+	 route $t0101_h1_lo
+	 route $t0101_r1_lo
+	 route $t0101_h2_lo
 EOF
 
 read -d '' t0101_h2_Quagga <<-EOF
 	router rip
-	 network 10.100.1.0/30
-	 network n1
-	 route $t0101_h2/32
+	 network n2
+	 route $t0101_h2_lo
 EOF
 
 source ${0%/*}/netns
 
-caption convergence retry 5 expect output="\'$t0101_h2 via*\'" \
+caption convergence retry 5 expect output="\'$t0101_h2 via $t0101_r1 *\'" \
 	on h1 ip route list $t0101_h2
-caption 'ping h2' expect ok on h1 ping -A -c 5 -w 2 h2 >/dev/null
-caption 'ping h1' expect ok on h1 ping -A -c 5 -w 2 h1 >/dev/null
+caption 'h1 ping r1' expect ok on h1 ping -A -c5 -w2 r1 >/dev/null
+caption 'r1 ping h2' expect ok on r1 ping -A -c5 -w2 h2 >/dev/null
+caption 'h1 ping h2' expect ok on h1 ping -A -c5 -w2 h2 >/dev/null
+caption 'h2 ping r1' expect ok on h2 ping -A -c5 -w2 r1 >/dev/null
+caption 'r1 ping h1' expect ok on r1 ping -A -c5 -w2 h1 >/dev/null
+caption 'h2 ping h1' expect ok on h2 ping -A -c5 -w2 h1 >/dev/null
