@@ -1,0 +1,74 @@
+#!/bin/bash
+#
+# Copyright (c) 2012 Tom Grennan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see http://www.gnu.org/licenses/ .
+
+t0401_description="Two networks with bgp"
+read -d '' t0401_diagram <<-"EOF"
+	\\th1 --- r1 --- h2
+EOF
+
+t0401_hosts="h1 r1 h2"
+t0401_h1="10.100.0.1"
+t0401_r1="10.100.0.11"
+t0401_h2="10.100.0.2"
+t0401_h1_lo="$t0401_h1/32"
+t0401_r1_lo="$t0401_r1/32"
+t0401_h2_lo="$t0401_h2/32"
+t0401_nets="n1 n2"
+t0401_n1_hosts="h1 r1"
+t0401_n2_hosts="r1 h2"
+t0401_h1_n1="$t0401_h1 peer $t0401_r1_lo"
+t0401_r1_n1="$t0401_r1 peer $t0401_h1_lo"
+t0401_r1_n2="$t0401_r1 peer $t0401_h2_lo"
+t0401_h2_n2="$t0401_h2 peer $t0401_r1_lo"
+t0401_asn=64512
+
+read -d '' t0401_h1_Quagga <<-EOF 
+	router bgp $t0401_asn
+	 bgp router-id $t0401_h1
+	 neighbor $t0401_r1 remote-as $t0401_asn
+	!
+	access-list all permit any
+EOF
+
+read -d '' t0401_r1_Quagga <<-EOF 
+	router bgp $t0401_asn
+	 bgp router-id $t0401_r1
+	 redistribute connected
+	 neighbor $t0401_h1 remote-as $t0401_asn
+	 neighbor $t0401_h2 remote-as $t0401_asn
+	!
+	access-list all permit any
+EOF
+
+read -d '' t0401_h2_Quagga <<-EOF 
+	router bgp $t0401_asn
+	 bgp router-id $t0401_h2
+	 neighbor $t0401_r1 remote-as $t0401_asn
+	!
+	access-list all permit any
+EOF
+
+source ${0%/*}/netns
+
+caption convergence retry 10 expect output="\'$t0401_h2 via $t0401_r1*\'" \
+	on h1 ip route list $t0401_h2
+caption 'h1 ping r1' retry 5 expect ok on h1 ping -Ac5 r1 >/dev/null
+caption 'r1 ping h2' retry 5 expect ok on r1 ping -Ac5 h2 >/dev/null
+caption 'h1 ping h2' retry 5 expect ok on h1 ping -Ac5 h2 >/dev/null
+caption 'h2 ping r1' retry 5 expect ok on h2 ping -Ac5 r1 >/dev/null
+caption 'r1 ping h1' retry 5 expect ok on r1 ping -Ac5 h1 >/dev/null
+caption 'h2 ping h1' retry 5 expect ok on h2 ping -Ac5 h1 >/dev/null
